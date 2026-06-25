@@ -13,6 +13,15 @@ settings:
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1"
+schemes:
+  MinecraftControl:
+    build:
+      targets:
+        MinecraftControl: all
+    run:
+      config: Debug
+    archive:
+      config: Release
 targets:
   MinecraftControl:
     type: application

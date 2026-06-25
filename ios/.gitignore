@@ -1,0 +1,11 @@
+# Xcode / build artifacts
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+
+# XcodeGen regenerates the project from project.yml; keep the .xcodeproj committed
+# (Xcode Cloud needs it) but ignore user-specific state inside it.
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/

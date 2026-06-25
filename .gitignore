@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# macOS
+.DS_Store
+
+# Runtime state (never commit the token / logs)
+.minecraft-pause/
+
+# Xcode build artifacts (see ios/.gitignore for the rest)
+ios/DerivedData/
+ios/build/

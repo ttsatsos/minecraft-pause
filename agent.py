@@ -18,6 +18,7 @@ import re
 import signal
 import socket
 import subprocess
+import sys
 import threading
 import time
 import secrets
@@ -121,6 +122,11 @@ _lock = threading.Lock()
 _guard_active = False
 _stopped_pids = set()
 _last_notify = 0.0
+
+# Whole-device lock (fullscreen overlay) state
+_locked = False
+_lock_proc = None
+_lock_msg = "Locked by Dad"
 
 
 def notify(msg, title="Minecraft", subtitle=None):
@@ -235,13 +241,77 @@ def do_status():
         mode = "running"
     else:
         mode = "not_running"
+    with _lock:
+        locked = _locked
     return {
         "mode": mode,
         "running": bool(running),
         "paused": bool(paused),
         "guard": active,
         "pids": running,
+        "locked": locked,
     }
+
+
+# ----------------------------------------------------------------------------
+# Whole-device lock — fullscreen "Locked by Dad" overlay
+# ----------------------------------------------------------------------------
+def _overlay_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "overlay.py")
+
+
+def _launch_overlay(msg):
+    try:
+        return subprocess.Popen([sys.executable, _overlay_path(), msg])
+    except Exception:
+        return None
+
+
+def do_lock(msg=None):
+    """Cover the whole screen with a lock overlay the kid can't dismiss."""
+    global _locked, _lock_proc, _lock_msg
+    with _lock:
+        _locked = True
+        _lock_msg = msg or "Locked by Dad"
+        if _lock_proc is None or _lock_proc.poll() is not None:
+            _lock_proc = _launch_overlay(_lock_msg)
+        shown = _lock_msg
+    notify("Locked by parent.", "Mac", shown)
+    return True
+
+
+def do_unlock():
+    """Remove the lock overlay."""
+    global _locked, _lock_proc
+    with _lock:
+        _locked = False          # set first so the watchdog won't respawn it
+        proc, _lock_proc = _lock_proc, None
+    if proc is not None:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+    notify("Unlocked by parent.", "Mac")
+    return False
+
+
+def lock_watchdog():
+    """Keep the overlay alive while locked — if the kid force-quits it, respawn."""
+    global _lock_proc
+    while True:
+        time.sleep(0.5)
+        with _lock:
+            locked, proc, msg = _locked, _lock_proc, _lock_msg
+        if locked and (proc is None or proc.poll() is not None):
+            new = _launch_overlay(msg)
+            with _lock:
+                if _locked:
+                    _lock_proc = new
+                elif new is not None:
+                    try:
+                        new.terminate()
+                    except Exception:
+                        pass
 
 
 def guard_loop():
@@ -439,6 +509,10 @@ class Handler(BaseHTTPRequestHandler):
         from urllib.parse import urlparse
         return urlparse(self.path).path
 
+    def _query(self, name):
+        from urllib.parse import urlparse, parse_qs
+        return parse_qs(urlparse(self.path).query).get(name, [None])[0]
+
     def do_GET(self):
         path = self._route()
         if path in ("/", "/index.html"):
@@ -463,6 +537,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/kill":
             pids = do_kill()
             return self._send(200, {**do_status(), "acted_on": pids})
+        if path == "/api/lock":
+            do_lock(self._query("msg"))
+            return self._send(200, do_status())
+        if path == "/api/unlock":
+            do_unlock()
+            return self._send(200, do_status())
         if path == "/api/status":
             return self._send(200, do_status())
         self._send(404, {"error": "not found"})
@@ -481,6 +561,7 @@ def lan_ip():
 
 def main():
     threading.Thread(target=guard_loop, daemon=True).start()
+    threading.Thread(target=lock_watchdog, daemon=True).start()
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     ip = lan_ip()
     print(f"Minecraft Control running.")

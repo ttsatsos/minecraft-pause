@@ -7,9 +7,10 @@ struct AgentStatus: Decodable, Equatable {
     let paused: Bool
     let isGuarding: Bool
     let pids: [Int]
+    let locked: Bool?         // whole-device lock overlay active (older agents omit this)
 
     enum CodingKeys: String, CodingKey {
-        case mode, running, paused, pids
+        case mode, running, paused, pids, locked
         case isGuarding = "guard"
     }
 }
@@ -33,10 +34,14 @@ struct AgentClient {
     let baseURL: String
     let token: String
 
-    private func send(_ path: String, method: String) async throws -> AgentStatus {
+    private func send(_ path: String, method: String,
+                      query: [String: String] = [:]) async throws -> AgentStatus {
         let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard var comps = URLComponents(string: trimmed) else { throw AgentError.badURL }
         comps.path = path
+        if !query.isEmpty {
+            comps.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        }
         guard let url = comps.url else { throw AgentError.badURL }
 
         var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
@@ -59,4 +64,8 @@ struct AgentClient {
     func pause()  async throws -> AgentStatus { try await send("/api/pause",  method: "POST") }
     func resume() async throws -> AgentStatus { try await send("/api/resume", method: "POST") }
     func kill()   async throws -> AgentStatus { try await send("/api/kill",   method: "POST") }
+    func lock(_ reason: String) async throws -> AgentStatus {
+        try await send("/api/lock", method: "POST", query: ["msg": reason])
+    }
+    func unlock() async throws -> AgentStatus { try await send("/api/unlock", method: "POST") }
 }

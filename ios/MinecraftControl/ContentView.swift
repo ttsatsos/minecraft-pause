@@ -11,10 +11,18 @@ struct ContentView: View {
 
     private var client: AgentClient { AgentClient(baseURL: gatewayURL, token: token) }
     private var isPaused: Bool { status?.mode == "paused" || status?.mode == "guarding" }
+    private var isLocked: Bool { status?.locked == true }
     private var configured: Bool {
         !gatewayURL.contains("tailXXXX") && !token.contains("PASTE_AGENT_TOKEN")
             && !gatewayURL.isEmpty && !token.isEmpty
     }
+
+    private let lockReasons: [(String, String)] = [
+        ("Homework", "Time for homework."),
+        ("Reading", "Time to read."),
+        ("Dinner", "Time for dinner."),
+        ("Come downstairs", "Come downstairs."),
+    ]
 
     var body: some View {
         ZStack {
@@ -24,6 +32,8 @@ struct ContentView: View {
                 statusLine
                 pauseButton
                 secondaryRow
+                Divider().overlay(Color.white.opacity(0.08))
+                lockRow
             }
             .padding(20)
         }
@@ -31,6 +41,29 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsSheet(gatewayURL: $gatewayURL, token: $token)
         }
+    }
+
+    private var lockRow: some View {
+        Group {
+            if isLocked {
+                Button { act { try await $0.unlock() } } label: {
+                    Label("Unlock Mac", systemImage: "lock.open.fill")
+                }
+                .buttonStyle(LockStyle(locked: true))
+            } else {
+                Menu {
+                    ForEach(lockReasons, id: \.0) { title, message in
+                        Button(title) { act { try await $0.lock(message) } }
+                    }
+                    Divider()
+                    Button("Just lock") { act { try await $0.lock("Locked by Dad.") } }
+                } label: {
+                    Label("Lock Mac", systemImage: "lock.fill")
+                }
+                .buttonStyle(LockStyle(locked: false))
+            }
+        }
+        .disabled(busy || !configured)
     }
 
     // MARK: - Pieces
@@ -55,6 +88,7 @@ struct ContentView: View {
         let (text, color): (String, Color) = {
             if !configured { return ("Tap the gear to set the Mac URL + token", .orange) }
             if let e = error { return (e == "Wrong token" ? "Wrong token" : "Can't reach Mac", .red) }
+            if isLocked { return ("Mac locked", .purple) }
             switch status?.mode {
             case "guarding", "paused": return ("Paused — guarding against restarts", .yellow)
             case "running":            return ("Minecraft is running", .green)
@@ -159,6 +193,28 @@ private struct SecondaryStyle: ButtonStyle {
             .background(Color(red: 0.086, green: 0.086, blue: 0.102))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08)))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
+    }
+}
+
+private struct LockStyle: ButtonStyle {
+    let locked: Bool
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 18, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(18)
+            .background(
+                LinearGradient(
+                    colors: locked
+                        ? [Color(red: 0.55, green: 0.35, blue: 0.9), Color(red: 0.42, green: 0.24, blue: 0.78)]
+                        : [Color(red: 0.20, green: 0.20, blue: 0.24), Color(red: 0.14, green: 0.14, blue: 0.17)],
+                    startPoint: .top, endPoint: .bottom
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
     }

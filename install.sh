@@ -20,6 +20,7 @@ fi
 echo "==> Installing to $APP_DIR"
 mkdir -p "$APP_DIR"
 cp "$SRC_DIR/agent.py" "$AGENT_DST"
+cp "$SRC_DIR/overlay.py" "$APP_DIR/overlay.py"
 
 echo "==> Writing LaunchAgent $PLIST"
 mkdir -p "$HOME/Library/LaunchAgents"

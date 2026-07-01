@@ -133,10 +133,49 @@ def notify(msg, title="Minecraft", subtitle=None):
         pass
 
 
+def _defocus_game():
+    """Drop Minecraft out of the foreground BEFORE we freeze it.
+
+    A fullscreen Minecraft captures the mouse/keyboard and owns the display; if
+    we SIGSTOP it while it's frontmost, it never releases that grab and the whole
+    Mac beach-balls with no way to switch away. Pushing it to the background first
+    (which also makes Minecraft release its mouse grab and auto-pause) means the
+    frozen game sits harmlessly behind the desktop and the Mac stays usable.
+
+    Layered + best-effort:
+      1. `open -a Finder` — brings Finder forward. Needs no special permission and
+         handles the common borderless-fullscreen case.
+      2. Hide the frontmost app via System Events — stronger, but requires the
+         agent to have macOS Accessibility permission. A no-op (silently) without
+         it, so layer 1 still applies.
+    Disable entirely with MCPAUSE_DEFOCUS=0.
+    """
+    if os.environ.get("MCPAUSE_DEFOCUS", "1") != "1":
+        return
+    # Stronger first (while the game is still frontmost): hide it outright.
+    try:
+        subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events" to set visible of '
+             '(first process whose frontmost is true) to false'],
+            capture_output=True, timeout=5,
+        )
+    except Exception:
+        pass
+    # No-permission fallback: pull Finder to the front so the game drops behind.
+    try:
+        subprocess.run(["open", "-a", "Finder"], timeout=5)
+    except Exception:
+        pass
+    time.sleep(0.35)  # let the window server switch + Minecraft release its grab
+
+
 def do_pause():
     """Freeze every running Minecraft game process and arm guard mode."""
     global _guard_active, _stopped_pids
     pids = [p for (p, s, c) in game_procs()]
+    if pids:
+        _defocus_game()  # get it out of fullscreen focus so the Mac stays usable
     for p in pids:
         try:
             os.kill(p, signal.SIGSTOP)
